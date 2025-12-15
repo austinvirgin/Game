@@ -23,8 +23,8 @@ class PongEnv(gym.Env):
         super().__init__()
 
         # Rewards from LEFT (agent) point of view
-        self.WIN_REWARD = 1_000
-        self.LOSE_REWARD = -115
+        self.WIN_REWARD = 0
+        self.LOSE_REWARD = 0
         self.HIT_REWARD = 1
 
         self.width = width
@@ -75,6 +75,10 @@ class PongEnv(gym.Env):
     @property
     def ball_right(self):
         return self.ball_x + self.BALL_SIZE / 2
+    
+    @property
+    def paddle_half_h(self):
+        return self.PADDLE_HEIGHT / 2.0
 
     @property
     def left_paddle_x(self):
@@ -148,8 +152,9 @@ class PongEnv(gym.Env):
                 self.right_dy = 0.0
 
         # --- Move paddles and ball ---
-        self.left_y = np.clip(self.left_y + self.left_dy, 0.0, self.height)
-        self.right_y = np.clip(self.right_y + self.right_dy, 0.0, self.height)
+        self.left_y = self._wrap_paddle_y(self.left_y + self.left_dy)
+        self.right_y = self._wrap_paddle_y(self.right_y + self.right_dy)
+
 
         self.ball_x += self.ball_dx
         self.ball_y += self.ball_dy
@@ -169,14 +174,12 @@ class PongEnv(gym.Env):
 
         if hit_left or hit_right:
             self.ball_dx *= -1.0
-            self.ball_dx += 0.001 if self.ball_dx > 0 else -0.001
-            self.ball_dy += 0.001 if self.ball_dy > 0 else -0.001
+            self.ball_dx += 0.1 if self.ball_dx > 0 else -0.1
+            self.ball_dy += 0.1 if self.ball_dy > 0 else -0.1
 
         # Agent (LEFT) reward shaping
         if hit_left:
-            reward += self.HIT_REWARD       # good: agent hit ball
-        if hit_right:
-            reward -= 1                     # slight penalty: opponent returned it
+            reward += self.HIT_REWARD       # good: agent hit ball                     # slight penalty: opponent returned it
 
         # --- Top/bottom bounce ---
         if self.ball_top >= self.height or self.ball_bottom <= 0.0:
@@ -184,13 +187,13 @@ class PongEnv(gym.Env):
 
         # --- Terminal conditions from LEFT agent perspective ---
         # LEFT paddle (agent) LOSES if ball exits on the LEFT side
-        if self.ball_right <= 0.0:
-            reward = self.LOSE_REWARD
+        if self.ball_left <= 0.0:
+            reward += self.LOSE_REWARD
             terminated = True
 
         # LEFT paddle (agent) WINS if ball exits on the RIGHT side
-        if self.ball_left >= self.width:
-            reward = self.WIN_REWARD
+        if self.ball_right >= self.width:
+            reward += self.WIN_REWARD
             terminated = True
 
         return self._get_obs(), reward, terminated, False, {}
@@ -238,6 +241,16 @@ class PongEnv(gym.Env):
             self.window.flip()
 
             time.sleep(0.03)
+
+    def _wrap_paddle_y(self, y):
+        top = self.height + self.paddle_half_h
+        bottom = -self.paddle_half_h
+
+        if y > top:
+            return bottom
+        if y < bottom:
+            return top
+        return y
 
     def close(self):
         if self.window:
